@@ -11,6 +11,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from src.config import settings
 from src.database import UserRepository
 from src.services import GigaChatService
+from src.services.search_service import SearchService
 from src.bot.middlewares import RegistrationMiddleware
 from src.bot.handlers import common_router, formula_router
 from src.utils import setup_logging
@@ -64,10 +65,23 @@ async def main():
     
     # Initialize services
     user_repo = UserRepository(settings.db_path)
+    
+    # Initialize Search Service (if enabled)
+    search_service = None
+    if settings.enable_search:
+        search_service = SearchService(
+            cache_repository=user_repo,
+            max_results=settings.search_max_results,
+            cache_ttl=settings.search_cache_ttl
+        )
+        logger.info("Search service initialized")
+    
+    # Initialize GigaChat Service with search integration
     gigachat_service = GigaChatService(
         credentials=settings.gigachat_key,
         scope=settings.gigachat_scope,
-        model=settings.gigachat_model
+        model=settings.gigachat_model,
+        search_service=search_service
     )
     
     # Register middleware

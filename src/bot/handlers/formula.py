@@ -99,7 +99,7 @@ async def handle_formula_photo(
                 "Это займет около 10-20 секунд."
             )
             
-            explanation = await gigachat_service.recognize_formula(file_id)
+            explanation = await gigachat_service.recognize_formula_with_search(file_id)
             
             # Delete processing message
             await processing_msg.delete()

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Logging Configuration
     log_level: str = "INFO"
     
+    # Search Configuration
+    enable_search: bool = True
+    search_max_results: int = 5
+    search_cache_ttl: int = 86400  # 24 hours in seconds
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -38,4 +38,19 @@ CREATE TABLE IF NOT EXISTS users (
     last_name TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
+
+# SQL schema for search cache table
+CREATE_SEARCH_CACHE_TABLE = """
+CREATE TABLE IF NOT EXISTS search_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    formula_normalized TEXT NOT NULL UNIQUE,
+    search_query TEXT NOT NULL,
+    results TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_formula_normalized ON search_cache(formula_normalized);
+CREATE INDEX IF NOT EXISTS idx_expires_at ON search_cache(expires_at);
+"""
 """
