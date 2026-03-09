@@ -12,6 +12,8 @@ from src.config import settings
 from src.database import UserRepository
 from src.services import GigaChatService
 from src.services.search_service import SearchService
+from src.services.formula_rag_service import FormulaRAGService
+from langchain_gigachat.chat_models import GigaChat as LangChainGigaChat
 from src.bot.middlewares import RegistrationMiddleware
 from src.bot.handlers import common_router, formula_router
 from src.utils import setup_logging
@@ -76,12 +78,41 @@ async def main():
         )
         logger.info("Search service initialized")
     
-    # Initialize GigaChat Service with search integration
+    # Initialize LangChain GigaChat for RAG service
+    langchain_llm = LangChainGigaChat(
+        credentials=settings.gigachat_key,
+        scope=settings.gigachat_scope,
+        model=settings.gigachat_model,
+        temperature=0.1,
+        verify_ssl_certs=False
+    )
+    
+    # Initialize FormulaRAG Service (if enabled)
+    formula_rag_service = None
+    if settings.enable_rag:
+        try:
+            logger.info("Initializing FormulaRAG service...")
+            formula_rag_service = FormulaRAGService(
+                llm=langchain_llm,
+                source_urls=settings.rag_source_urls,
+                chunk_size=settings.rag_chunk_size,
+                chunk_overlap=settings.rag_chunk_overlap,
+                k=settings.rag_retrieval_k
+            )
+            await formula_rag_service.initialize()
+            logger.info("FormulaRAG service initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize RAG service: {e}", exc_info=True)
+            logger.warning("Continuing without RAG service")
+            formula_rag_service = None
+    
+    # Initialize GigaChat Service with search and RAG integration
     gigachat_service = GigaChatService(
         credentials=settings.gigachat_key,
         scope=settings.gigachat_scope,
         model=settings.gigachat_model,
-        search_service=search_service
+        search_service=search_service,
+        formula_rag_service=formula_rag_service
     )
     
     # Register middleware
@@ -92,8 +123,14 @@ async def main():
     dp.include_router(formula_router)
     
     # Register startup/shutdown handlers
-    dp.startup.register(lambda: on_startup(bot, user_repo))
-    dp.shutdown.register(lambda: on_shutdown(bot))
+    async def startup_handler():
+        await on_startup(bot, user_repo)
+    
+    async def shutdown_handler():
+        await on_shutdown(bot)
+    
+    dp.startup.register(startup_handler)
+    dp.shutdown.register(shutdown_handler)
     
     # Inject dependencies into handlers
     # This makes user_repo, gigachat_service, and bot available in all handlers

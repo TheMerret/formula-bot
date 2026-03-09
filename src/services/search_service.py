@@ -1,9 +1,11 @@
 """Search service for DuckDuckGo integration."""
 
 import logging
+import asyncio
 from typing import Optional
 from datetime import datetime, timedelta
 from langchain_community.tools import DuckDuckGoSearchResults
+from duckduckgo_search.exceptions import RatelimitException
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +111,13 @@ class SearchService:
             # 2. Build search query
             query = self.build_search_query(formula_text, formula_name)
             
-            # 3. Perform search
+            # 3. Perform search with retry logic
             logger.info(f"Searching internet for: {query}")
-            results = self.search_tool.run(query)
+            results = await self._search_with_retry(query)
+            
+            if results is None:
+                logger.warning(f"Search failed after retries for: {formula_text}")
+                return None
             
             # 4. Format results
             formatted = self._format_search_results(results)
@@ -130,6 +136,63 @@ class SearchService:
         except Exception as e:
             logger.error(f"Search failed for {formula_text}: {e}", exc_info=True)
             return None
+    
+    async def _search_with_retry(
+        self,
+        query: str,
+        max_retries: int = 3,
+        initial_delay: float = 2.0
+    ) -> Optional[str]:
+        """
+        Perform search with exponential backoff retry logic.
+        
+        Args:
+            query: Search query
+            max_retries: Maximum number of retry attempts
+            initial_delay: Initial delay in seconds before first retry
+            
+        Returns:
+            Search results or None if all retries failed
+        """
+        delay = initial_delay
+        
+        for attempt in range(max_retries):
+            try:
+                # Run search in executor to avoid blocking
+                loop = asyncio.get_event_loop()
+                results = await loop.run_in_executor(
+                    None,
+                    self.search_tool.run,
+                    query
+                )
+                return results
+                
+            except RatelimitException as e:
+                logger.warning(
+                    f"Rate limit hit on attempt {attempt + 1}/{max_retries}: {e}"
+                )
+                
+                if attempt < max_retries - 1:
+                    logger.info(f"Waiting {delay:.1f}s before retry...")
+                    await asyncio.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                else:
+                    logger.error(
+                        f"Search failed after {max_retries} attempts due to rate limiting"
+                    )
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"Search error on attempt {attempt + 1}: {e}", exc_info=True)
+                
+                if attempt < max_retries - 1:
+                    logger.info(f"Waiting {delay:.1f}s before retry...")
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    return None
+        
+        return None
     
     def _format_search_results(self, results: str) -> str:
         """

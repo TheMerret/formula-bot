@@ -81,8 +81,10 @@ async def handle_formula_photo(
             # Read photo bytes
             photo_bytes = photo_file.read()
             photo_io = io.BytesIO(photo_bytes)
+            # Add name attribute so GigaChat can detect MIME type
+            photo_io.name = "image.jpg"
             
-            logger.info(f"Photo downloaded, size: {len(photo_bytes)} bytes")
+            logger.info(f"Photo downloaded, size: {len(photo_bytes)} bytes, format: JPEG")
             
             # Upload to GigaChat
             await processing_msg.edit_text(

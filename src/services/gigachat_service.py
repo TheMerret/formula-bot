@@ -20,7 +20,8 @@ class GigaChatService:
         credentials: str,
         scope: str = "GIGACHAT_API_PERS",
         model: str = "GigaChat-Pro",
-        search_service: Optional['SearchService'] = None
+        search_service: Optional['SearchService'] = None,
+        formula_rag_service: Optional['FormulaRAGService'] = None
     ):
         """
         Initialize GigaChat service.
@@ -30,11 +31,13 @@ class GigaChatService:
             scope: API scope
             model: Model name to use
             search_service: Optional SearchService for internet search integration
+            formula_rag_service: Optional FormulaRAGService for RAG-based formula retrieval
         """
         self.credentials = credentials
         self.scope = scope
         self.model = model
         self.search_service = search_service
+        self.formula_rag_service = formula_rag_service
         
         # Initialize GigaChat client for image upload
         self.client = GigaChat(
@@ -98,21 +101,31 @@ class GigaChatService:
             logger.info("Chain 1: Extracting formula from image")
             formula_text = await self._extract_formula_from_image(file_id)
             
+            # Chain 2: Get detailed explanation
+            logger.info("Chain 2: Getting formula explanation")
+            explanation = await self._explain_formula(formula_text)
+            
+            return explanation
+            
+        except Exception as e:
+            logger.error(f"Failed to recognize formula: {e}")
+            raise
     
     async def recognize_formula_with_search(self, file_id: str) -> str:
         """
-        Recognize and explain a mathematical formula with internet search enhancement.
+        Recognize and explain a mathematical formula with RAG + internet search.
         
-        This implements a three-chain approach:
+        This implements a five-chain approach:
         Chain 1: Image → Formula extraction
-        Chain 2: Formula → Internet search for context
-        Chain 3: Formula + Search context → Detailed explanation
+        Chain 2-3: Formula → Query rewriting + RAG retrieval (in FormulaRAGService)
+        Chain 4: Formula → Internet search for context
+        Chain 5: Formula + RAG + Search context → Detailed explanation
         
         Args:
             file_id: GigaChat file ID of the uploaded image
             
         Returns:
-            Detailed explanation of the formula with search context
+            Detailed explanation of the formula with RAG and search context
             
         Raises:
             Exception: If recognition fails
@@ -122,31 +135,38 @@ class GigaChatService:
             logger.info("Chain 1: Extracting formula from image")
             formula_text = await self._extract_formula_from_image(file_id)
             
-            # Chain 2: Search internet for context (if search service available)
+            # Chains 2-3: RAG retrieval with query rewriting (if RAG service available)
+            rag_context = None
+            if self.formula_rag_service and self.formula_rag_service.is_initialized:
+                logger.info("Chains 2-3: RAG retrieval with query rewriting")
+                rag_context = self.formula_rag_service.search_formula(formula_text)
+                if rag_context:
+                    logger.info("RAG context retrieved successfully")
+                else:
+                    logger.info("No relevant context found in RAG")
+            else:
+                logger.info("Chains 2-3: Skipped (RAG service not available)")
+            
+            # Chain 4: Search internet for context (if search service available)
             search_results = None
             if self.search_service:
-                logger.info("Chain 2: Searching internet for formula context")
+                logger.info("Chain 4: Searching internet for formula context")
                 search_results = await self.search_service.search_formula(formula_text)
             else:
-                logger.info("Chain 2: Skipped (search service not available)")
+                logger.info("Chain 4: Skipped (search service not available)")
             
-            # Chain 3: Get detailed explanation with search context
-            logger.info("Chain 3: Generating comprehensive explanation")
-            explanation = await self._explain_formula_with_context(formula_text, search_results)
-            
-            return explanation
-            
-        except Exception as e:
-            logger.error(f"Failed to recognize formula with search: {e}")
-            raise
-            # Chain 2: Get detailed explanation
-            logger.info("Chain 2: Getting formula explanation")
-            explanation = await self._explain_formula(formula_text)
+            # Chain 5: Get detailed explanation with RAG and search context
+            logger.info("Chain 5: Generating comprehensive explanation")
+            explanation = await self._explain_formula_with_rag_context(
+                formula_text,
+                rag_context,
+                search_results
+            )
             
             return explanation
             
         except Exception as e:
-            logger.error(f"Failed to recognize formula: {e}")
+            logger.error(f"Failed to recognize formula with RAG and search: {e}")
             raise
     
     async def _extract_formula_from_image(self, file_id: str) -> str:
@@ -207,6 +227,16 @@ class GigaChatService:
 5. **Практическое применение**: Где и как эта формула применяется на практике?
 6. **Пример использования**: Приведи простой пример расчета (если применимо)
 
+Отвечай на русском языке, структурированно и понятно.
+"""
+        )
+        
+        chain = prompt_template | self.llm
+        response = chain.invoke({"formula": formula_text})
+        explanation = response.content
+        
+        logger.info("Formula explanation generated successfully")
+        return explanation
     
     async def _explain_formula_with_context(
         self,
@@ -214,7 +244,10 @@ class GigaChatService:
         search_results: Optional[str]
     ) -> str:
         """
-        Chain 3: Get detailed explanation with search context.
+        Chain 3: Get detailed explanation with search context (legacy method).
+        
+        This method is kept for backward compatibility.
+        Use _explain_formula_with_rag_context for RAG-enhanced explanations.
         
         Args:
             formula_text: The extracted formula text
@@ -223,24 +256,53 @@ class GigaChatService:
         Returns:
             Detailed explanation with search context
         """
-        # Build context section
-        search_context = ""
+        return await self._explain_formula_with_rag_context(
+            formula_text,
+            rag_context=None,
+            search_results=search_results
+        )
+    
+    async def _explain_formula_with_rag_context(
+        self,
+        formula_text: str,
+        rag_context: Optional[str],
+        search_results: Optional[str]
+    ) -> str:
+        """
+        Chain 5: Get detailed explanation with RAG and search context.
+        
+        Args:
+            formula_text: The extracted formula text
+            rag_context: Context from RAG retrieval (if available)
+            search_results: Internet search results (if available)
+            
+        Returns:
+            Detailed explanation with RAG and search context
+        """
+        # Build context sections
         sources = ["🤖 GigaChat AI"]
         
+        # RAG context section
+        rag_section = ""
+        if rag_context:
+            rag_section = f"\n\n{rag_context}"
+            sources.insert(0, "📚 База знаний (HSE Mathematical Analysis)")
+        
+        # Search context section
+        search_section = ""
         if search_results:
-            search_context = f"""
-
-**Дополнительная информация из интернета:**
-{search_results}
-"""
-            sources.insert(0, "🌐 Интернет-поиск (DuckDuckGo)")
+            search_section = f"\n\n**Дополнительная информация из интернета:**\n{search_results}"
+            # Insert search source after RAG if RAG exists, otherwise at beginning
+            insert_pos = 1 if rag_context else 0
+            sources.insert(insert_pos, "🌐 Интернет-поиск (DuckDuckGo)")
         
         prompt_template = PromptTemplate(
-            input_variables=["formula", "search_context", "sources"],
+            input_variables=["formula", "rag_context", "search_context", "sources"],
             template="""
 Ты - опытный преподаватель математики и физики. Тебе дана формула:
 
 {formula}
+{rag_context}
 {search_context}
 
 Используя всю доступную информацию, предоставь подробное объяснение этой формулы:
@@ -264,22 +326,13 @@ class GigaChatService:
         chain = prompt_template | self.llm
         response = chain.invoke({
             "formula": formula_text,
-            "search_context": search_context,
+            "rag_context": rag_section,
+            "search_context": search_section,
             "sources": "\n".join(f"- {s}" for s in sources)
         })
         explanation = response.content
         
-        logger.info("Formula explanation with context generated successfully")
-        return explanation
-Отвечай на русском языке, структурированно и понятно.
-"""
-        )
-        
-        chain = prompt_template | self.llm
-        response = chain.invoke({"formula": formula_text})
-        explanation = response.content
-        
-        logger.info("Formula explanation generated successfully")
+        logger.info("Formula explanation with RAG and search context generated successfully")
         return explanation
     
     async def simple_chat(self, user_message: str, system_prompt: str = None) -> str:

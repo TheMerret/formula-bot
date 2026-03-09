@@ -27,7 +27,7 @@ class UserRepository:
         """Initialize the database and create tables if they don't exist."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(CREATE_USERS_TABLE)
-            await db.execute(CREATE_SEARCH_CACHE_TABLE)
+            await db.executescript(CREATE_SEARCH_CACHE_TABLE)
             await db.commit()
         logger.info(f"Database initialized at {self.db_path}")
     
@@ -129,6 +129,8 @@ class UserRepository:
                         first_name=row[2],
                         last_name=row[3]
                     )
+                    for row in rows
+                ]
     
     async def get_cached_search(self, formula_normalized: str) -> Optional[str]:
         """
@@ -213,5 +215,3 @@ class UserRepository:
             if deleted > 0:
                 logger.info(f"Cleaned up {deleted} expired cache entries")
             return deleted
-                    for row in rows
-                ]

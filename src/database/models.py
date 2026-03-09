@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
     last_name TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
+"""
 
 # SQL schema for search cache table
 CREATE_SEARCH_CACHE_TABLE = """
@@ -52,5 +53,4 @@ CREATE TABLE IF NOT EXISTS search_cache (
 
 CREATE INDEX IF NOT EXISTS idx_formula_normalized ON search_cache(formula_normalized);
 CREATE INDEX IF NOT EXISTS idx_expires_at ON search_cache(expires_at);
-"""
 """

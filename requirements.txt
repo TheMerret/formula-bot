@@ -2,9 +2,13 @@ aiogram==3.13.1
 aiosqlite==0.20.0
 python-dotenv==1.0.1
 gigachat==0.1.35
-langchain-gigachat==0.2.2
+langchain-gigachat~=0.2
 langchain==0.3.7
 langchain-community==0.3.7
-pydantic==2.10.3
+pydantic<2.10.3
 pydantic-settings==2.6.1
 duckduckgo-search==6.3.5
+langchain-text-splitters==0.3.2
+rank-bm25==0.2.2
+beautifulsoup4==4.12.3
+lxml==5.1.0
